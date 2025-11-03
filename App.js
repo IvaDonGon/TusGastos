@@ -11,12 +11,20 @@ import { ThemeProvider, useTheme } from './ThemeContext';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 Ionicons.loadFont();
 
-import WelcomeScreen from './WelcomeScreen';   // ⬅️ NUEVO (inicio)
+// 🧩 Importaciones de pantallas
+import WelcomeScreen from './WelcomeScreen';
 import LoginScreen from './LoginScreen';
 import RegisterScreen from './RegisterScreen';
 import Onboarding from './Onboarding';
 import MainTabs from './MainTabs';
 import EditProfileScreen from './EditProfileScreen';
+import GastoEntryScreen from './GastoEntryScreen';
+import TipoGastoScreen from './TipoGastoScreen';   // 👈 FALTABA ESTA LÍNEA
+import RecurringExpensesScreen from './RecurringExpensesScreen'; 
+import RecurringListScreen from './RecurringListScreen';
+import ExpensesListScreen from './ExpensesListScreen';
+import RecurringConfirmScreen from './RecurringConfirmScreen';
+
 
 const Stack = createNativeStackNavigator();
 
@@ -72,7 +80,46 @@ function AppNavigator() {
             component={MainTabs}
             options={{ headerShown: false }}
           />
-          <Stack.Screen name="EditProfileScreen" component={EditProfileScreen} options={{ title: 'Editar perfil' }} />
+<Stack.Screen
+  name="ExpensesList"
+  component={ExpensesListScreen}
+  options={{ title: 'Todos los gastos', headerShown: false }}
+/>
+          {/* 💰 Pantalla para crear un gasto */}
+          <Stack.Screen
+            name="GastoEntry"
+            component={GastoEntryScreen}
+            options={{ title: 'Nuevo Gasto' }}
+          />
+
+          {/* 💡 Nueva pantalla de tipos de gasto */}
+          <Stack.Screen
+            name="TipoGasto"
+            component={TipoGastoScreen}
+            options={{ title: 'Tipos de Gasto' }}
+          />
+
+          {/* 🧍 Edición de perfil */}
+          <Stack.Screen
+            name="EditProfileScreen"
+            component={EditProfileScreen}
+            options={{ title: 'Editar perfil' }}
+          />
+          <Stack.Screen
+  name="RecurringConfirm"
+  component={RecurringConfirmScreen}
+  options={{ headerShown: false, title: 'Por confirmar' }}
+/>
+<Stack.Screen
+  name="RecurringList"
+  component={RecurringListScreen}
+  options={{ title: 'Recurrentes activos' }}
+/>
+          <Stack.Screen
+  name="RecurringExpensesScreen"
+  component={RecurringExpensesScreen}
+  options={{ title: 'Gastos recurrentes' }}
+/>
         </Stack.Navigator>
       </NavigationContainer>
     </>

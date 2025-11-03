@@ -7,9 +7,28 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  TouchableOpacity,
 } from 'react-native';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { supabase } from './supabaseClient';
 import { useTheme } from './ThemeContext';
+
+Ionicons.loadFont();
+
+function NavItem({ icon, title, subtitle, onPress, theme }) {
+  return (
+    <TouchableOpacity style={[styles.navItem, { backgroundColor: theme.colors.card }]} onPress={onPress}>
+      <View style={[styles.navIconBox, { backgroundColor: theme.isDark ? '#ffffff14' : '#00000012' }]}>
+        <Ionicons name={icon} size={20} color={theme.isDark ? '#fff' : '#000'} />
+      </View>
+      <View style={styles.navTextBox}>
+        <Text style={[styles.navTitle, { color: theme.colors.text }]}>{title}</Text>
+        {subtitle ? <Text style={[styles.navSubtitle, { color: theme.colors.text }]}>{subtitle}</Text> : null}
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={theme.isDark ? '#fff' : '#000'} />
+    </TouchableOpacity>
+  );
+}
 
 export default function SettingsScreen({ navigation }) {
   const { theme, toggleTheme } = useTheme();
@@ -23,7 +42,6 @@ export default function SettingsScreen({ navigation }) {
       setLoading(true);
       const { data: sessionData } = await supabase.auth.getSession();
       const user = sessionData?.session?.user;
-      console.log(user)
       if (!user) return setPerfil(null);
 
       const { data, error } = await supabase
@@ -83,7 +101,7 @@ export default function SettingsScreen({ navigation }) {
             <Text style={[styles.name, { color: theme.colors.text }]}>{perfil.nombre}</Text>
             <Text style={[styles.email, { color: theme.colors.text }]}>{perfil.email}</Text>
 
-             {/* Botón para ir a la pantalla de edición */}
+            {/* Botón para ir a la pantalla de edición */}
             <View style={{ marginTop: 12 }}>
               <Button
                 title="Editar perfil"
@@ -96,7 +114,11 @@ export default function SettingsScreen({ navigation }) {
           {/* Preferencias */}
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Preferencias</Text>
 
+          {/* Tarjeta: Envío de notificaciones */}
           <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+            <View style={[styles.cardIconBox, { backgroundColor: theme.isDark ? '#ffffff14' : '#00000012' }]}>
+              <Ionicons name="notifications-outline" size={20} color={theme.isDark ? '#fff' : '#000'} />
+            </View>
             <View style={styles.cardTextContainer}>
               <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
                 Envío de notificaciones
@@ -113,7 +135,11 @@ export default function SettingsScreen({ navigation }) {
             />
           </View>
 
+          {/* Tarjeta: Modo oscuro */}
           <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+            <View style={[styles.cardIconBox, { backgroundColor: theme.isDark ? '#ffffff14' : '#00000012' }]}>
+              <Ionicons name="moon-outline" size={20} color={theme.isDark ? '#fff' : '#000'} />
+            </View>
             <View style={styles.cardTextContainer}>
               <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
                 Modo oscuro
@@ -128,6 +154,30 @@ export default function SettingsScreen({ navigation }) {
               trackColor={{ false: '#aaa', true: '#000' }}
               thumbColor="#fff"
             />
+          </View>
+
+          {/* Nueva sección: Mantenedores */}
+          <Text style={[styles.sectionTitle, { color: theme.colors.text, marginTop: 18 }]}>
+            Mantenedores
+          </Text>
+
+          <View style={styles.navGroup}>
+            <NavItem
+              icon="pricetags-outline"
+              title="Tipos de gasto"
+              subtitle="Administra tus categorías personalizadas"
+              onPress={() => navigation.navigate('TipoGasto')} // nombre de la ruta en App.js
+              theme={theme}
+            />
+            {/* Más mantenedores a futuro...
+            <NavItem
+              icon="business-outline"
+              title="Cuentas / Bancos"
+              subtitle="Gestiona tus medios de pago"
+              onPress={() => navigation.navigate('Bancos')}
+              theme={theme}
+            />
+            */}
           </View>
         </>
       ) : (
@@ -152,7 +202,7 @@ const styles = StyleSheet.create({
   avatarContainer: {
     alignItems: 'center',
     marginBottom: 32,
-    marginTop: 60, // 👈 más espacio superior para bajar el avatar
+    marginTop: 60,
   },
   avatar: {
     width: 90,
@@ -166,23 +216,51 @@ const styles = StyleSheet.create({
   name: { fontSize: 20, fontWeight: '600' },
   email: { fontSize: 15 },
   sectionTitle: { fontSize: 18, fontWeight: '600', marginBottom: 10 },
+
   card: {
     borderRadius: 12,
     padding: 16,
     marginVertical: 6,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 12,
+  },
+  cardIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardTextContainer: { flex: 1 },
   cardTitle: { fontSize: 16, fontWeight: '600' },
   cardSubtitle: { fontSize: 13, opacity: 0.6 },
-  item: { fontSize: 16, marginBottom: 8 },
-   btn: {
-    backgroundColor: '#000',
-    paddingVertical: 14,
-    borderRadius: 30,
-    alignItems: 'center',
-    marginTop: 6,
+
+  // Navegación tipo lista
+  navGroup: {
+    borderRadius: 12,
+    overflow: 'hidden',
+
   },
+  navItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    gap: 12,
+    
+    borderBottomColor: '#eaeaea',
+  },
+  navIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navTextBox: { flex: 1 },
+  navTitle: { fontSize: 16, fontWeight: '600' },
+  navSubtitle: { fontSize: 12, opacity: 0.6 },
+
+  item: { fontSize: 16, marginBottom: 8 },
 });

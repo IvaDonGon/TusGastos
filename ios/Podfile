@@ -8,27 +8,126 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+# ✅ Hace que los pods generen module maps (necesario para GoogleUtilities si linkeas estático)
+#use_modular_headers!
+
+# Si quieres frameworks dinámicos en lugar de estáticos, setea la variable de entorno:
+#   USE_FRAMEWORKS=dynamic npx pod-install
+# …y quita use_modular_headers!. Pero para RN recomiendo modular headers.
 linkage = ENV['USE_FRAMEWORKS']
 if linkage != nil
   Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
   use_frameworks! :linkage => linkage.to_sym
 end
-
+$RNFirebaseAnalyticsWithoutAdIdSupport = true
+# ⚠️ CAMBIA el nombre del target si tu app no se llama 'SupabaseDemo' en Xcode
 target 'SupabaseDemo' do
   config = use_native_modules!
 
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.
-    :app_path => "#{Pod::Config.instance.installation_root}/.."
+    :app_path => "#{Pod::Config.instance.installation_root}/..",
+    :hermes_enabled => true,
+    :fabric_enabled => false
   )
 
-  post_install do |installer|
-    react_native_post_install(
-      installer,
-      config[:reactNativePath],
-      :mac_catalyst_enabled => false,
-      # :ccache_enabled => true
-    )
+  # --- Firebase (declara solo lo que uses) ---
+  # Si usas Analytics sin IDFA:
+  pod 'RNFBApp', :path => '../node_modules/@react-native-firebase/app'
+  pod 'RNFBAnalytics', :path => '../node_modules/@react-native-firebase/analytics'
+  pod 'RNFBMessaging', :path => '../node_modules/@react-native-firebase/messaging'
+
+  # Autenticación:
+  # pod 'FirebaseAuth', :modular_headers => true
+  # Notificaciones (FCM):
+  # pod 'FirebaseMessaging', :modular_headers => true
+
+  # (Opcional) Si prefieres el "bundle" viejo:
+  # pod 'Firebase/Core', :modular_headers => true
+
+  # --- Dependencias sensibles (forzamos modular headers) ---
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseCore', :modular_headers => true 
+
+post_install do |installer|
+  react_native_post_install(
+    installer,
+    config[:reactNativePath],
+    :mac_catalyst_enabled => false
+  )
+
+  # -------- Helpers ----------
+  normalize = lambda do |val|
+    v = val
+    v = [] if v.nil? || v == ''
+    v = [v] unless v.is_a?(Array)
+    v = v.flatten.compact.map(&:to_s)
+    v
   end
+
+  scrub_flags = lambda do |settings, key|
+    # Limpia claves planas y variantes con condiciones (ej. [sdk=iphoneos*], [arch=*], etc.)
+    keys = settings.keys.select { |k| k == key || k.start_with?("#{key}[") }
+    keys.each do |k|
+      arr = normalize.call(settings[k])
+      # Quita cualquier -Werror y -Werror=*
+      arr.reject! { |f| f.start_with?('-Werror') }
+      # Asegura herencia y fuerza desactivaciones
+      arr |= ['$(inherited)']
+      arr |= %w[
+        -Wno-error
+        -Wno-error=deprecated-objc-isa-usage
+        -Wno-error=objc-root-class
+        -Wno-error=return-type
+      ]
+      settings[k] = arr
+    end
+  end
+
+  # -------- Ajustes a nivel de proyecto --------
+  installer.pods_project.build_configurations.each do |cfg|
+    cfg.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+    cfg.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+    cfg.build_settings['CLANG_WARN_DOCUMENTATION_COMMENTS'] = 'NO'
+    cfg.build_settings['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+    cfg.build_settings['VALIDATE_PRODUCT'] = 'NO'
+  end
+
+  # -------- Ajustes por target (incluye variantes de flags) --------
+  installer.pods_project.targets.each do |t|
+  t.build_configurations.each do |cfg|
+    bs = cfg.build_settings
+    bs['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+    bs['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+    bs['CLANG_WARN_DOCUMENTATION_COMMENTS'] = 'NO'
+    bs['GCC_TREAT_WARNINGS_AS_ERRORS'] = 'NO'
+    bs['VALIDATE_PRODUCT'] = 'NO'
+
+    # 👇 Añade/ajusta estas tres líneas
+    bs['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'NO'
+    bs['ENABLE_LIBRARY_EVOLUTION']       = 'NO'
+    bs['SWIFT_VERIFY_EMITTED_MODULE_INTERFACE'] = 'NO'
+
+    scrub_flags.call(bs, 'OTHER_CFLAGS')
+    scrub_flags.call(bs, 'OTHER_CPLUSPLUSFLAGS')
+
+    wc_keys = bs.keys.select { |k| k == 'WARNING_CFLAGS' || k.start_with?('WARNING_CFLAGS[') }
+    wc_keys.each do |k|
+      wc = normalize.call(bs[k])
+      wc |= %w[-Wno-documentation -Wno-deprecated-objc-isa-usage]
+      bs[k] = wc
+    end
+  end
+end
+
+
+
+end
+
+
+
+
+
 end

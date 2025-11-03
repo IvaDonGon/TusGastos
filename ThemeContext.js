@@ -14,9 +14,26 @@ export const ThemeProvider = ({ children }) => {
     isDark,
     colors: {
       background: isDark ? '#000' : '#fff',
-      text:       isDark ? '#fff' : '#000',
-      card:       isDark ? '#151515' : '#f6f6f6',
-    }
+      text: isDark ? '#fff' : '#000',
+      card: isDark ? '#151515' : '#f6f6f6',
+      accent: '#007AFF', // Azul iOS moderno
+      border: isDark ? '#2b2b2b' : '#e6e6e6',
+    },
+    fonts: {
+      family: 'Montserrat-Regular', // Fuente base
+      sizes: {
+        title: 26,
+        subtitle: 18,
+        body: 16,
+        small: 13,
+      },
+      weights: {
+        regular: '400',
+        medium: '500',
+        semibold: '600',
+        bold: '700',
+      },
+    },
   }), [isDark]);
 
   const value = useMemo(() => ({ theme, toggleTheme }), [theme]);
