@@ -1,4 +1,4 @@
-// DashboardScreen.js (completo: íconos en carrusel, gastos recientes y gráfico semanal con tooltip fijo desde Supabase)
+// DashboardScreen.js (fechas locales corregidas + tipos ordenados por gasto del mes)
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
@@ -10,7 +10,8 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
-  Platform,Dimensions,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import Ion from 'react-native-vector-icons/Ionicons';
 import { supabase } from './supabaseClient';
@@ -73,6 +74,27 @@ const resolveIcon = (iconName, nombre) => {
   return resolveIconByNombre(nombre) || Lucide.Tag;
 };
 
+/* =========================
+   Helpers de fecha LOCAL
+   ========================= */
+// 'YYYY-MM-DD' en horario local (sin UTC)
+const ymdLocal = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const todayYMD = () => ymdLocal(new Date());
+
+// Normaliza cualquier valor (string ISO/Date) a 'YYYY-MM-DD' local.
+// Si ya viene 'YYYY-MM-DD', lo respeta.
+const normalizeToYMD = (val) => {
+  if (!val) return '';
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+  return ymdLocal(new Date(val));
+};
+
 export default function DashboardScreen({ route, navigation }) {
   const { theme } = useTheme();
   const params = route?.params ?? {};
@@ -89,12 +111,18 @@ export default function DashboardScreen({ route, navigation }) {
   const [recurrentes, setRecurrentes] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
 
-  // 🆕 Total gastado hoy
-  const [dailyTotal, setDailyTotal] = useState(0); // 🆕
+  // Total gastado HOY
+  const [dailyTotal, setDailyTotal] = useState(0);
 
   // Tipos para UI + diccionario por id para resolver icono en recientes
   const [tiposGastoUI, setTiposGastoUI] = useState([]);
   const [tiposDict, setTiposDict] = useState({}); // { [id]: { nombre, icon_name, IconCmp } }
+
+  const [nearLimitTypes, setNearLimitTypes] = useState([]);
+  const [overLimitTypes, setOverLimitTypes] = useState([]);
+  const [limitsEnabled, setLimitsEnabled] = useState(false);
+  const [notifyPercent, setNotifyPercent] = useState(80); // porcentaje para "cerca del límite"
+  const [limitsMap, setLimitsMap] = useState({}); // { [idTipo]: topeMensual }
 
   // Gráfico semanal (desde Supabase)
   const [weeklyData, setWeeklyData] = useState([]);
@@ -102,7 +130,7 @@ export default function DashboardScreen({ route, navigation }) {
   const screenWidth = Dimensions.get('window').width;
   const containerHPad = 20;   // padding horizontal del container
   const cardHPad = 16;        // padding horizontal del sparkCard
-  const chartWidth = Math.max(0, screenWidth - 2*containerHPad - 2*cardHPad);
+  const chartWidth = Math.max(0, screenWidth - 2 * containerHPad - 2 * cardHPad);
 
   const nBars = weeklyData?.length ?? 0;
   const bw = 28; // barWidth
@@ -128,39 +156,38 @@ export default function DashboardScreen({ route, navigation }) {
     const s = Math.round(num).toString();
     return '$' + s.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   };
-  const formatUIDate = (iso) => {
-    if (!iso) return '';
-    const [y, m, d] = String(iso).slice(0, 10).split('-');
+  const formatUIDate = (val) => {
+    const ymd = normalizeToYMD(val);
+    if (!ymd) return '';
+    const [y, m, d] = ymd.split('-');
     return `${d}/${m}/${y}`;
   };
 
-  // Rango mes actual
+  // Rango mes actual (local)
   const monthRange = useMemo(() => {
     const now = new Date();
     const y = now.getFullYear();
     const m = now.getMonth();
     const start = new Date(y, m, 1);
     const end = new Date(y, m + 1, 0);
-    const toISO = (d) => d.toISOString().slice(0, 10);
-    return { startISO: toISO(start), endISO: toISO(end) };
+    return { startYMD: ymdLocal(start), endYMD: ymdLocal(end) };
   }, []);
 
-  // Rango mes anterior
+  // Rango mes anterior (local)
   const prevMonthRange = useMemo(() => {
     const d = new Date();
     const y = d.getFullYear();
     const m = d.getMonth();
     const prevStart = new Date(y, m - 1, 1);
     const prevEnd = new Date(y, m, 0);
-    const toISO = (x) => x.toISOString().slice(0, 10);
-    return { startISO: toISO(prevStart), endISO: toISO(prevEnd) };
+    return { startYMD: ymdLocal(prevStart), endYMD: ymdLocal(prevEnd) };
   }, []);
 
   // Nombre del mes
   const monthNameEs = useMemo(() => {
     const meses = [
-      'enero','febrero','marzo','abril','mayo','junio',
-      'julio','agosto','septiembre','octubre','noviembre','diciembre'
+      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
     ];
     const idx = new Date().getMonth();
     const name = meses[idx] || '';
@@ -172,7 +199,7 @@ export default function DashboardScreen({ route, navigation }) {
     const curr = Number(monthlyTotal || 0);
     const prev = Number(prevMonthlyTotal || 0);
     if (prev <= 0 && curr <= 0) return { deltaPctAbs: 0, isUp: false };
-    if (prev <= 0 && curr > 0)  return { deltaPctAbs: 100, isUp: true };
+    if (prev <= 0 && curr > 0) return { deltaPctAbs: 100, isUp: true };
     const delta = ((curr - prev) / prev) * 100;
     return { deltaPctAbs: Math.abs(delta), isUp: delta > 0 };
   }, [monthlyTotal, prevMonthlyTotal]);
@@ -192,11 +219,17 @@ export default function DashboardScreen({ route, navigation }) {
 
         const { data, error } = await supabase
           .from('usuarios')
-          .select('nombre, email')
+          .select('nombre, email, limits_by_category_enabled, notify_at_percent')
           .eq('id', user.id)
           .single();
 
-        if (!error && data) setPerfil({ nombre: data.nombre, email: data.email });
+        if (!error && data) {
+          setPerfil({ nombre: data.nombre, email: data.email });
+
+          // Configuración de límites del usuario
+          setLimitsEnabled(Boolean(data.limits_by_category_enabled));
+          setNotifyPercent(data.notify_at_percent || 80);
+        }
       } catch (e) {
         console.log('Error al cargar perfil:', e?.message);
       } finally {
@@ -209,14 +242,13 @@ export default function DashboardScreen({ route, navigation }) {
     }
   }, [params?.nombre, params?.email]);
 
-    // 🆕 Promedio diario del mes actual
-const dailyAvgThisMonth = useMemo(() => {
-  const now = new Date();
-  const day = now.getDate();
-  if (day <= 0) return 0;
-  return Number(monthlyTotal || 0) / day;
-}, [monthlyTotal]);
-
+  // Promedio diario del mes actual
+  const dailyAvgThisMonth = useMemo(() => {
+    const now = new Date();
+    const day = now.getDate();
+    if (day <= 0) return 0;
+    return Number(monthlyTotal || 0) / day;
+  }, [monthlyTotal]);
 
   // Carga datos del dashboard (totales, recientes, recurrentes, pendientes)
   const fetchMonthlyTotalAndRecent = useCallback(async () => {
@@ -233,19 +265,41 @@ const dailyAvgThisMonth = useMemo(() => {
         setPendingCount(0);
         setTiposGastoUI([]);
         setTiposDict({});
-        setDailyTotal(0); // 🆕
+        setDailyTotal(0);
         return;
       }
 
-      // 1) Tipos (trae icon_name)
+// ⚙️ Leer SIEMPRE la config del usuario (nombre + límites por categoría)
+      let localLimitsEnabled = limitsEnabled;
+      let localNotifyPercent = notifyPercent;
+
+      const { data: userCfg, error: errUserCfg } = await supabase
+        .from('usuarios')
+        .select('nombre, email, limits_by_category_enabled, notify_at_percent')
+        .eq('id', user.id)
+        .single();
+
+      if (!errUserCfg && userCfg) {
+        // Actualizamos perfil por si cambió el nombre/correo
+        setPerfil({ nombre: userCfg.nombre, email: userCfg.email });
+
+        localLimitsEnabled = Boolean(userCfg.limits_by_category_enabled);
+        localNotifyPercent = userCfg.notify_at_percent || 80;
+
+        // Reflejamos en el estado global
+        setLimitsEnabled(localLimitsEnabled);
+        setNotifyPercent(localNotifyPercent);
+      }
+
+
+
+      // 1) Tipos (trae icon_name) → construimos solo el diccionario aquí
       const { data: tiposData, error: errTipos } = await supabase
         .from('tipos_gastos')
         .select('id, nombre, icon_name')
-        .eq('user_id', user.id)
-        .order('nombre', { ascending: true });
+        .eq('user_id', user.id);
 
       const tiposDictTmp = {};
-      const tiposUI = [];
       if (!errTipos && Array.isArray(tiposData)) {
         tiposData.forEach((t) => {
           const IconCmp = resolveIcon(t.icon_name, t.nombre);
@@ -255,38 +309,53 @@ const dailyAvgThisMonth = useMemo(() => {
             icon_name: t.icon_name || null,
             IconCmp,
           };
-          tiposUI.push({ id, nombre: t.nombre || 'Tipo', IconCmp });
         });
       }
       setTiposDict(tiposDictTmp);
-      setTiposGastoUI(tiposUI);
 
-      // 2) Mes actual
+      // 1.b) Limites por categoría desde user_category_limits
+      const { data: limitsData, error: errLimits } = await supabase
+        .from('user_category_limits')
+        .select('category_id, monthly_limit')
+        .eq('user_id', user.id);
+
+      const limitsTmpMap = {};
+      if (!errLimits && Array.isArray(limitsData)) {
+        limitsData.forEach((row) => {
+          const idStr = String(row.category_id);
+          limitsTmpMap[idStr] = Number(row.monthly_limit || 0);
+        });
+      }
+      setLimitsMap(limitsTmpMap);
+
+      // 2) Mes actual (local) → gastos
       const { data, error } = await supabase
         .from('gastos')
         .select('id, fecha, tipo, id_tipo_gasto, total, nota')
         .eq('user_id', user.id)
-        .gte('fecha', monthRange.startISO)
-        .lte('fecha', monthRange.endISO)
+        .gte('fecha', monthRange.startYMD)
+        .lte('fecha', monthRange.endYMD)
         .order('fecha', { ascending: false })
-        .limit(50);
+        .limit(200);
 
       if (error) {
         console.log('Error leyendo gastos actuales:', error.message);
         setMonthlyTotal(0);
         setMontosRecientes([]);
-        setDailyTotal(0); // 🆕
+        setDailyTotal(0);
       } else {
+        // Total del mes
         const sum = (data || []).reduce((acc, it) => acc + Number(it.total || 0), 0);
         setMonthlyTotal(sum);
 
-        // 🆕 Calcular total de HOY a partir del mismo dataset mensual
-        const todayISO = new Date().toISOString().slice(0, 10);
+        // Total de HOY (LOCAL)
+        const today = todayYMD();
         const todayTotal = (data || [])
-          .filter(g => String(g.fecha).slice(0,10) === todayISO)
+          .filter(g => normalizeToYMD(g.fecha) === today)
           .reduce((acc, it) => acc + Number(it.total || 0), 0);
-        setDailyTotal(todayTotal); // 🆕
+        setDailyTotal(todayTotal);
 
+        // Recientes (para la lista)
         const recientes = (data || []).map((g) => {
           let nombreTipo = 'Gasto';
           let IconCmp = Lucide.Tag;
@@ -308,18 +377,66 @@ const dailyAvgThisMonth = useMemo(() => {
             IconCmp,
           };
         });
-
         setMontosRecientes(recientes);
+
+        // *** Totales por tipo para ORDENAR el carrusel ***
+        const totalsByTipoId = {};
+        (data || []).forEach((g) => {
+          const idStr = g.id_tipo_gasto != null ? String(g.id_tipo_gasto) : null;
+          if (!idStr) return; // gastos sin tipo no cuentan para el carrusel
+          totalsByTipoId[idStr] = (totalsByTipoId[idStr] || 0) + Number(g.total || 0);
+        });
+
+        // Construimos tiposGastoUI con el total y ordenamos desc por total
+        const tiposUIWithTotals = Object.entries(tiposDictTmp).map(([id, info]) => ({
+          id,
+          nombre: info.nombre,
+          IconCmp: info.IconCmp,
+          totalMes: totalsByTipoId[id] || 0,
+        }));
+
+        tiposUIWithTotals.sort((a, b) => {
+          if (b.totalMes !== a.totalMes) return b.totalMes - a.totalMes; // mayor a menor
+          return a.nombre.localeCompare(b.nombre); // empate → alfabético
+        });
+
+        // Alertas de categorías (usando el limitsTmpMap recién cargado)
+        if (!limitsEnabled) {
+          setNearLimitTypes([]);
+          setOverLimitTypes([]);
+        } else {
+          const near = [];
+          const over = [];
+          const factor = (localNotifyPercent || 80) / 100; // ej: 80%
+
+          tiposUIWithTotals.forEach((t) => {
+            const idStr = String(t.id);
+            const limit = Number(limitsTmpMap[idStr] || 0);
+            if (!limit) return; // sin tope → ignorar
+
+            const spent = Number(t.totalMes || 0);
+
+            if (spent >= limit) {
+              over.push({ ...t, spent, limit });
+            } else if (spent >= limit * factor) {
+              near.push({ ...t, spent, limit });
+            }
+          });
+
+          setNearLimitTypes(near);
+          setOverLimitTypes(over);
+        }
+
+        setTiposGastoUI(tiposUIWithTotals);
       }
 
-    
-      // 3) Mes anterior
+      // 3) Mes anterior (local)
       const { data: dataPrev, error: errPrev } = await supabase
         .from('gastos')
         .select('total, fecha')
         .eq('user_id', user.id)
-        .gte('fecha', prevMonthRange.startISO)
-        .lte('fecha', prevMonthRange.endISO);
+        .gte('fecha', prevMonthRange.startYMD)
+        .lte('fecha', prevMonthRange.endYMD);
 
       if (errPrev) {
         console.log('Error leyendo gastos previos:', errPrev.message);
@@ -351,13 +468,13 @@ const dailyAvgThisMonth = useMemo(() => {
         );
       }
 
-      // 5) Pendientes por confirmar (mes actual)
+      // 5) Pendientes por confirmar (mes actual, local)
       const { count: pendCount, error: errPend } = await supabase
         .from('gastos_recurrentes_ocurrencias')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
-        .gte('fecha_venc', monthRange.startISO)
-        .lte('fecha_venc', monthRange.endISO)
+        .gte('fecha_venc', monthRange.startYMD)
+        .lte('fecha_venc', monthRange.endYMD)
         .eq('estado', 'pendiente');
 
       if (errPend) {
@@ -375,14 +492,14 @@ const dailyAvgThisMonth = useMemo(() => {
       setPendingCount(0);
       setTiposGastoUI([]);
       setTiposDict({});
-      setDailyTotal(0); // 🆕
+      setDailyTotal(0);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [monthRange, prevMonthRange, refreshing]);
+  }, [monthRange, prevMonthRange, refreshing, limitsEnabled, notifyPercent]);
 
-  // Gráfico semanal desde Supabase
+  // Gráfico semanal desde Supabase (LOCAL)
   const fetchWeeklyData = useCallback(async () => {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -392,28 +509,26 @@ const dailyAvgThisMonth = useMemo(() => {
         return;
       }
 
-      // Rango: últimos 7 días (incluye hoy)
+      // Rango: últimos 7 días (incluye hoy) LOCAL
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(endDate.getDate() - 6);
 
-      const toISO = (d) => d.toISOString().slice(0, 10);
-
-      // Consulta
+      // Consulta usando YMD local
       const { data, error } = await supabase
         .from('gastos')
         .select('fecha, total')
         .eq('user_id', user.id)
-        .gte('fecha', toISO(startDate))
-        .lte('fecha', toISO(endDate));
+        .gte('fecha', ymdLocal(startDate))
+        .lte('fecha', ymdLocal(endDate));
 
       if (error) throw error;
 
-      // Sumar por día (YYYY-MM-DD)
+      // Sumar por día (clave en YMD local)
       const totalsByDay = {};
       (data || []).forEach((g) => {
-        const day = String(g.fecha).slice(0, 10);
-        totalsByDay[day] = (totalsByDay[day] || 0) + Number(g.total || 0);
+        const key = normalizeToYMD(g.fecha);
+        totalsByDay[key] = (totalsByDay[key] || 0) + Number(g.total || 0);
       });
 
       // Armar array ordenado por los 7 días cronológicos (de startDate a endDate)
@@ -422,7 +537,7 @@ const dailyAvgThisMonth = useMemo(() => {
       for (let i = 0; i < 7; i++) {
         const d = new Date(startDate);
         d.setDate(startDate.getDate() + i);
-        const key = d.toISOString().slice(0, 10);
+        const key = ymdLocal(d);
 
         // getDay(): 0=Dom ... 6=Sab → convertir a 0=Lun ... 6=Dom
         const dow = d.getDay(); // 0..6
@@ -564,7 +679,7 @@ const dailyAvgThisMonth = useMemo(() => {
         <ActivityIndicator color={theme.colors.text} />
       ) : (
         <ScrollView
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: 100 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -588,26 +703,26 @@ const dailyAvgThisMonth = useMemo(() => {
 
           {/* Cards pequeñas */}
           <View style={styles.row}>
-          {/* Promedio diario */}
-  <View style={[styles.smallCard, { backgroundColor: theme.colors.card }]}>
-    <View style={[styles.iconCircle, { backgroundColor: theme.isDark ? '#fff' : '#000' }]}>
-      <Ion name="bar-chart-outline" size={20} color={theme.isDark ? '#000' : '#fff'} />
-    </View>
-    <View style={{ marginLeft: 10 }}>
-      <Text style={{ fontSize: 10, opacity: 0.6, color: theme.colors.text }}>Promedio diario</Text>
-      <Text style={{ fontSize: 18, fontWeight: '800', marginTop: 2, color: theme.colors.text }}>
-        {formatCLP(dailyAvgThisMonth)}
-      </Text>
-    </View>
-  </View>
+            {/* Promedio diario */}
+            <View style={[styles.smallCard, { backgroundColor: theme.colors.card }]}>
+              <View style={[styles.iconCircle, { backgroundColor: theme.isDark ? '#fff' : '#000' }]}>
+                <Ion name="bar-chart-outline" size={20} color={theme.isDark ? '#000' : '#fff'} />
+              </View>
+              <View style={{ marginLeft: 10 }}>
+                <Text style={{ fontSize: 10, opacity: 0.6, color: theme.colors.text }}>Promedio diario</Text>
+                <Text style={{ fontSize: 18, fontWeight: '800', marginTop: 2, color: theme.colors.text }}>
+                  {formatCLP(dailyAvgThisMonth)}
+                </Text>
+              </View>
+            </View>
 
-            {/* 🆕 Card: Gastado HOY */}
+            {/* Gastado HOY */}
             <View style={[styles.smallCard, { backgroundColor: theme.colors.card }]}>
               <View style={[styles.iconCircle, { backgroundColor: theme.isDark ? '#fff' : '#000' }]}>
                 <Ion name="cash-outline" size={20} color={theme.isDark ? '#000' : '#fff'} />
               </View>
               <View style={{ marginLeft: 10 }}>
-                <Text style={{ fontSize: 10, opacity: 0.6, color: theme.colors.text }}>Gastos del dia</Text>
+                <Text style={{ fontSize: 10, opacity: 0.6, color: theme.colors.text }}>Gastos del día</Text>
                 <Text style={{ fontSize: 18, fontWeight: '800', marginTop: 2, color: theme.colors.text }}>
                   {formatCLP(Math.abs(dailyTotal))}
                 </Text>
@@ -705,6 +820,111 @@ const dailyAvgThisMonth = useMemo(() => {
               </Text>
             }
           />
+{/* Alertas de límites */}
+{limitsEnabled && (nearLimitTypes.length > 0 || overLimitTypes.length > 0) && (
+  <View style={{ marginTop: 28, marginBottom: 8 }}>
+    <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+      Alerta de presupuesto
+    </Text>
+
+    <View
+      style={[
+        styles.bigCard,
+        {
+          backgroundColor: theme.colors.card,
+          marginTop: 10,
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          paddingVertical: 16,
+          paddingHorizontal: 10,
+          justifyContent: 'flex-start',
+        },
+      ]}
+    >
+      {/* Sobrepasadas */}
+      {overLimitTypes.map((t) => (
+        <View
+          key={t.id}
+          style={{
+            width: 70,
+            alignItems: 'center',
+            marginRight: 12,
+            marginBottom: 18,
+          }}
+        >
+          <View
+            style={{
+              width: 50,
+              height: 50,
+              borderRadius: 25,
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: theme.isDark ? '#FF3B30' : '#ffcccc',
+            }}
+          >
+            <t.IconCmp size={22} color={theme.isDark ? '#fff' : '#000'} />
+          </View>
+
+          <Text
+            numberOfLines={1}
+            style={{
+              marginTop: 6,
+              fontSize: 11,
+              fontWeight: '500',
+              color: theme.colors.text,
+              textAlign: 'center',
+              width: '100%',
+            }}
+          >
+            {t.nombre}
+          </Text>
+        </View>
+      ))}
+
+      {/* Cerca del límite */}
+      {nearLimitTypes.map((t) => (
+        <View
+          key={t.id}
+          style={{
+            width: 70,
+            alignItems: 'center',
+            marginRight: 12,
+            marginBottom: 18,
+          }}
+        >
+          <View
+            style={{
+              width: 50,
+              height: 50,
+              borderRadius: 25,
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: theme.isDark ? '#FFCC00' : '#fff3cd',
+            }}
+          >
+            <t.IconCmp size={22} color={theme.isDark ? '#fff' : '#000'} />
+          </View>
+
+          <Text
+            numberOfLines={1}
+            style={{
+              marginTop: 6,
+              fontSize: 11,
+              fontWeight: '500',
+              color: theme.colors.text,
+              textAlign: 'center',
+              width: '100%',
+            }}
+          >
+            {t.nombre}
+          </Text>
+        </View>
+      ))}
+    </View>
+  </View>
+)}
+
+
 
           {/* Resumen Recurrentes */}
           <View style={[styles.bigCard, { backgroundColor: theme.colors.card, marginTop: 20 }]}>
@@ -748,7 +968,7 @@ const dailyAvgThisMonth = useMemo(() => {
             </Text>
           </View>
 
-          <View style={[styles.sparkCard, { backgroundColor: theme.colors.card, marginTop: 8 }]}>
+          <View style={[styles.sparkCard, { backgroundColor: theme.colors.card, marginTop: 8, paddingBottom: 70, }]}>
             <BarChart
               data={weeklyData}
               width={chartWidth}

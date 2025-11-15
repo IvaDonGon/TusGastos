@@ -16,26 +16,59 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { supabase } from './supabaseClient';
 import { useTheme } from './ThemeContext';
 
-// ===============================
-// Utilidades de fecha
-// ===============================
-const isoToUI = (iso) => {
-  if (!iso) return '';
-  const [y, m, d] = String(iso).slice(0, 10).split('-');
+/* ===============================
+   Utilidades de FECHA (LOCAL)
+   =============================== */
+// Devuelve 'YYYY-MM-DD' en horario local del dispositivo
+const ymdLocal = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const todayYMD = () => ymdLocal(new Date());
+
+// Si viene 'YYYY-MM-DD' la dejamos; si viene Date/ISO lo normalizamos a YMD local
+const normalizeToYMD = (val) => {
+  if (!val) return '';
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+  return ymdLocal(new Date(val));
+};
+
+// 'YYYY-MM-DD' -> 'DD/MM/YYYY'
+const ymdToUI = (ymd) => {
+  if (!ymd) return '';
+  const [y, m, d] = String(ymd).slice(0, 10).split('-');
   return `${d}/${m}/${y}`;
 };
-const uiToISO = (ui) => {
+
+// 'DD/MM/YYYY' -> 'YYYY-MM-DD'
+const uiToYMD = (ui) => {
   if (!ui) return '';
   const [d, m, y] = String(ui).split('/');
   return `${y}-${m}-${d}`;
 };
+
+// Valida formato y consistencia del día
+const isValidUIDate = (v) => {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(v)) return false;
+  const [d, m, y] = v.split('/').map(Number);
+  if (m < 1 || m > 12) return false;
+  if (d < 1 || d > 31) return false;
+  // Chequeo de días por mes (febrero bisiesto simple)
+  const isLeap = (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+  const daysInMonth = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return d <= daysInMonth[m - 1];
+};
+
+// Máscara DD/MM/YYYY
 const maskDDMMYYYY = (raw) => {
   const digits = raw.replace(/\D/g, '').slice(0, 8);
   if (digits.length <= 2) return digits;
   if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 };
-const isValidUIDate = (v) => /^\d{2}\/\d{2}\/\d{4}$/.test(v);
 
 export default function GastoEntryScreen({ navigation, route }) {
   const { theme } = useTheme();
@@ -43,9 +76,14 @@ export default function GastoEntryScreen({ navigation, route }) {
 
   const [userId, setUserId] = useState(null);
 
-  const [fechaUI, setFechaUI] = useState(
-    gastoEditar?.fecha ? isoToUI(gastoEditar.fecha) : isoToUI(new Date().toISOString())
-  );
+  // Fecha por defecto: si viene de edición, normalizamos a YMD y mostramos UI local;
+  // si no, usamos hoy local (NO toISOString()).
+  const [fechaUI, setFechaUI] = useState(() => {
+    const ymd = gastoEditar?.fecha
+      ? normalizeToYMD(gastoEditar.fecha)
+      : todayYMD();
+    return ymdToUI(ymd);
+  });
 
   // NUEVO: usar tipoId (FK) y lista [{id,nombre}]
   const [tipoId, setTipoId] = useState(gastoEditar?.id_tipo_gasto ?? null);
@@ -133,10 +171,16 @@ export default function GastoEntryScreen({ navigation, route }) {
     return () => {
       mounted = false;
     };
-  }, [userId, esEdicion, gastoEditar?.tipo_id, gastoEditar?.tipo, tipoId]);
+    // Nota: incluyo ambas variantes por si tu objeto de ruta cambia nombres
+  }, [userId, esEdicion, gastoEditar?.id_tipo_gasto, gastoEditar?.tipo, tipoId]);
 
   const validar = () => {
     if (!isValidUIDate(fechaUI)) return 'Formato de fecha inválido (DD/MM/YYYY).';
+    const ymd = uiToYMD(fechaUI);
+    // Comprobación extra usando Date (p.ej. 31/11 no existe)
+    const [y, m, d] = ymd.split('-').map(Number);
+    const probe = new Date(y, m - 1, d);
+    if (ymdLocal(probe) !== ymd) return 'La fecha no es válida.';
     if (!tipoId) return 'Debes seleccionar un tipo.';
     const monto = parseFloat(String(total).replace(',', '.'));
     if (isNaN(monto) || monto <= 0) return 'El total debe ser mayor a 0.';
@@ -163,9 +207,10 @@ export default function GastoEntryScreen({ navigation, route }) {
         return;
       }
 
+      // Guardamos fecha como 'YYYY-MM-DD' (día calendario)
       const payload = {
         user_id: uid,
-        fecha: uiToISO(fechaUI),
+        fecha: uiToYMD(fechaUI),
         id_tipo_gasto: tipoId,
         total: parseFloat(String(total).replace(',', '.')),
         nota: nota?.trim() || null,
@@ -308,7 +353,7 @@ export default function GastoEntryScreen({ navigation, route }) {
           </View>
         </ScrollView>
 
-        {/* BOTONES FIJOS: GUARDAR ARRIBA / CANCELAR ABAJO */}
+        {/* BOTONES FIJOS: GUARDAR / CANCELAR */}
         <View style={styles.footer}>
           <TouchableOpacity
             onPress={guardar}
@@ -328,10 +373,7 @@ export default function GastoEntryScreen({ navigation, route }) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.btnSecondary,
-             
-            ]}
+            style={[styles.btnSecondary]}
             onPress={irAlDashboard}
           >
             <Text style={[styles.btnText, { color: theme.colors.text }]}>Cancelar</Text>
@@ -391,8 +433,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 30,
     alignItems: 'center',
-  
-       backgroundColor: '#f0f0f0',
+    backgroundColor: '#f0f0f0',
   },
   btnText: { fontSize: 16, fontWeight: '800' },
 });

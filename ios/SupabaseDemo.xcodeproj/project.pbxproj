@@ -12,7 +12,7 @@
 		25921A27DD0E1AE38AE0B240 /* libPods-SupabaseDemo.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1F72E84BC1075EFE058450FA /* libPods-SupabaseDemo.a */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
-		E00D55782EB837660083E4AC /* GoogleService-Info (1).plist in Resources */ = {isa = PBXBuildFile; fileRef = E00D55772EB837660083E4AC /* GoogleService-Info (1).plist */; };
+		E00D55782EB837660083E4AC /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = E00D55772EB837660083E4AC /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,7 +26,7 @@
 		924A9B853A9DC0DB53A7C212 /* Pods-SupabaseDemo.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SupabaseDemo.debug.xcconfig"; path = "Target Support Files/Pods-SupabaseDemo/Pods-SupabaseDemo.debug.xcconfig"; sourceTree = "<group>"; };
 		C4651A5625CDF3EC7D8E87A3 /* Pods-SupabaseDemo.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SupabaseDemo.release.xcconfig"; path = "Target Support Files/Pods-SupabaseDemo/Pods-SupabaseDemo.release.xcconfig"; sourceTree = "<group>"; };
 		E001F6732EA4715F009C6836 /* SupabaseDemo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = SupabaseDemo.entitlements; path = SupabaseDemo/SupabaseDemo.entitlements; sourceTree = "<group>"; };
-		E00D55772EB837660083E4AC /* GoogleService-Info (1).plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info (1).plist"; sourceTree = "<group>"; };
+		E00D55772EB837660083E4AC /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -47,7 +47,7 @@
 			children = (
 				E001F6732EA4715F009C6836 /* SupabaseDemo.entitlements */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
-				E00D55772EB837660083E4AC /* GoogleService-Info (1).plist */,
+				E00D55772EB837660083E4AC /* GoogleService-Info.plist */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
@@ -167,7 +167,7 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				1EC4DC9A03924C0314E80ACB /* PrivacyInfo.xcprivacy in Resources */,
-				E00D55782EB837660083E4AC /* GoogleService-Info (1).plist in Resources */,
+				E00D55782EB837660083E4AC /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -279,7 +279,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = SupabaseDemo/SupabaseDemo.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SupabaseDemo/SupabaseDemo.Debug.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
@@ -316,7 +317,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_ENTITLEMENTS = SupabaseDemo/SupabaseDemo.entitlements;
+				CODE_SIGN_ENTITLEMENTS = SupabaseDemo/SupabaseDemo.Release.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;

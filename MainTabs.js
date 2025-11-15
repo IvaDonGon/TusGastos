@@ -1,6 +1,15 @@
 // MainTabs.js
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Pressable, Platform, useWindowDimensions } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  Pressable,
+  Platform,
+  useWindowDimensions,
+} from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -25,6 +34,9 @@ export default function MainTabs({ route }) {
   // Altura “grande pero no exagerada”
   const sheetMinHeight = Math.min(420, Math.round(height * 0.8));
 
+  // Offset inferior para iOS (notch)
+  const bottomOffset = Platform.OS === 'ios' ? 24 : 16;
+
   return (
     <>
       <Tab.Navigator
@@ -35,9 +47,14 @@ export default function MainTabs({ route }) {
           tabBarInactiveTintColor: '#999',
           tabBarStyle: {
             backgroundColor: '#fff',
-            borderTopColor: '#000',
-            borderTopWidth: 0,
+            borderTopColor: '#eee',
+            borderTopWidth: 1,
             height: 80,
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            elevation: 20,
           },
           tabBarIcon: ({ color, focused }) => {
             const iconMap = {
@@ -57,29 +74,6 @@ export default function MainTabs({ route }) {
           options={{ title: 'Inicio' }}
         />
 
-        {/* ➕ Botón central -> abre modal de 2 opciones */}
-        <Tab.Screen
-          name="Agregar"
-          component={() => null}
-          options={{
-            title: '',
-            tabBarLabel: '',
-            tabBarIcon: () => null,
-            tabBarButton: (props) => (
-              <TouchableOpacity
-                {...props}
-                activeOpacity={0.85}
-                style={styles.plusButtonContainer}
-                onPress={() => setShowQuickActions(true)}
-              >
-                <View style={styles.plusButton}>
-                  <Icon name="add" size={28} color="#fff" />
-                </View>
-              </TouchableOpacity>
-            ),
-          }}
-        />
-
         {/* ⚙️ Configuración */}
         <Tab.Screen
           name="Configuración"
@@ -87,6 +81,16 @@ export default function MainTabs({ route }) {
           options={{ title: 'Configuración' }}
         />
       </Tab.Navigator>
+
+      {/* ➕ Botón flotante real (centrado sobre el tab bar) */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => setShowQuickActions(true)}
+        style={[styles.floatingButton, { bottom: 40 + bottomOffset }]}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Icon name="add" size={32} color="#fff" />
+      </TouchableOpacity>
 
       {/* 🔽 Modal: elegir tipo de gasto */}
       <Modal
@@ -135,24 +139,21 @@ export default function MainTabs({ route }) {
 }
 
 const styles = StyleSheet.create({
-  // Botón flotante central
-  plusButtonContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    top: -10,
-  },
-  plusButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  /* 🌟 Botón flotante centrado sobre el tab bar */
+  floatingButton: {
+    position: 'absolute',
+    alignSelf: 'center',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
     backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
-    shadowRadius: 3.5,
-    elevation: 6,
+    shadowRadius: 4,
+    elevation: 8,
   },
 
   // Modal tipo bottom sheet
@@ -165,7 +166,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    // antes: minHeight: 300 -> ahora se define dinámicamente desde el componente
     paddingTop: 16,
     paddingBottom: Platform.OS === 'ios' ? 28 : 20,
     paddingHorizontal: 18,

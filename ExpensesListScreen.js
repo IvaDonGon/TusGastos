@@ -1,5 +1,5 @@
-// ExpensesListScreen.js
-import React, { useCallback, useEffect, useState } from 'react';
+// ExpensesListScreen.js (con Total del mes + íconos por tipo en lista y chips)
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, FlatList, RefreshControl,
   TouchableOpacity, SafeAreaView, Alert, Modal, TextInput, KeyboardAvoidingView,
@@ -13,7 +13,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 
 const TABLE_TIPOS = 'tipos_gastos';
 
-// ---------- helpers ----------
+/* =============== Helpers dinero/fecha UI =============== */
 const formatCLP = (n) => {
   const num = Number(n || 0);
   const s = Math.round(num).toString();
@@ -37,6 +37,66 @@ const maskDDMMYYYY = (raw) => {
 };
 const isValidUIDate = (v) => /^\d{2}\/\d{2}\/\d{4}$/.test(v);
 
+/* =============== Helpers fecha LOCAL =============== */
+const ymdLocal = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+const normalizeToYMD = (val) => {
+  if (!val) return '';
+  if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) return val.slice(0, 10);
+  return ymdLocal(new Date(val));
+};
+
+/* =============== Helpers íconos (Lucide) =============== */
+const toPascal = (str) =>
+  (str || '')
+    .replace(/[-_ ]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map(s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
+    .join('');
+
+const getLucide = (name) => {
+  if (!name) return null;
+  const direct = Lucide[name];
+  if (direct) return direct;
+  const pascal = toPascal(name);
+  return Lucide[pascal] || null;
+};
+
+const resolveIconByNombre = (nombre) => {
+  const n = (nombre || '').toLowerCase();
+  if (/(super|mercado|market|abarrote|mini\s?market)/.test(n)) return Lucide.ShoppingCart;
+  if (/(comida|rest|almuerzo|cena|food|aliment|caf(é|e)|restaurant|bar)/.test(n)) return Lucide.Utensils;
+  if (/(transp|bus|metro|taxi|uber|cabify|peaje)/.test(n)) return Lucide.Car;
+  if (/(bencin|nafta|combust|gasolin)/.test(n)) return Lucide.Fuel;
+  if (/(casa|hogar|arriendo|renta|depart|dept|domicilio|mudanza)/.test(n)) return Lucide.Home;
+  if (/(luz|electric|energ(í|i)a|consumo)/.test(n)) return Lucide.Lightbulb;
+  if (/(agua|sanitari|potable)/.test(n)) return Lucide.Droplets;
+  if (/(gas|cilindro|balón|balon)/.test(n)) return Lucide.Flame;
+  if (/(salud|doctor|m(e|é)d(ic|)a|farmacia|isapre|fonasa)/.test(n)) return Lucide.HeartPulse;
+  if (/(educ|coleg|escuela|uni|curso|capacit)/.test(n)) return Lucide.GraduationCap;
+  if (/(entreten|cine|netflix|spotify|m(ú|u)sica|musica|tv)/.test(n)) return Lucide.Clapperboard;
+  if (/(ropa|vest|zapato|polera|pantal)/.test(n)) return Lucide.Shirt;
+  if (/(viaje|travel|hotel|vuelo|a(é|e)reo|avion|avión)/.test(n)) return Lucide.Plane;
+  if (/(tel(é|e)fono|celu|m(ó|o)vil|internet|wifi|datos)/.test(n)) return Lucide.Smartphone;
+  if (/(impuesto|tax|sii|contrib|renta)/.test(n)) return Lucide.Receipt;
+  if (/(mascota|perro|gato|vet)/.test(n)) return Lucide.Dog;
+  if (/(deporte|gym|gimnas)/.test(n)) return Lucide.Dumbbell;
+  if (/(banco|tarjeta|cr(é|e)dito|cuota|financ)/.test(n)) return Lucide.CreditCard;
+  return Lucide.Tag; // fallback
+};
+
+// 1) icon_name de DB → 2) heurística por nombre → 3) Tag
+const resolveIcon = (iconName, nombre) => {
+  const fromDB = getLucide(iconName);
+  if (fromDB) return fromDB;
+  return resolveIconByNombre(nombre) || Lucide.Tag;
+};
+
 export default function ExpensesListScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation();
@@ -47,28 +107,51 @@ export default function ExpensesListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [items, setItems] = useState([]);
 
-  // TIPOS
-  const [tipos, setTipos] = useState([]); // [{id: string, nombre: string}]
+  // TIPOS (con icono)
+  // [{id, nombre, icon_name, IconCmp}]
+  const [tipos, setTipos] = useState([]);
   const [tiposLoading, setTiposLoading] = useState(false);
+
+  // TOTAL MES
+  const [totalMonth, setTotalMonth] = useState(0);
 
   // MODAL EDICIÓN
   const [editVisible, setEditVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Campos del modal
-  const [editId, setEditId] = useState(null); // string SIEMPRE
+  const [editId, setEditId] = useState(null);
   const [fechaUI, setFechaUI] = useState(isoToUI(new Date().toISOString()));
-  const [tipoId, setTipoId] = useState(null); // string (uuid) o null
+  const [tipoId, setTipoId] = useState(null);
   const [total, setTotal] = useState('');
   const [nota, setNota] = useState('');
 
-  // ---------- cargar gastos ----------
+  // Rango mes actual (local) + nombre de mes
+  const monthRange = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const start = new Date(y, m, 1);
+    const end = new Date(y, m + 1, 0);
+    return { startYMD: ymdLocal(start), endYMD: ymdLocal(end) };
+  }, []);
+  const monthNameEs = useMemo(() => {
+    const meses = [
+      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+    ];
+    const idx = new Date().getMonth();
+    const n = meses[idx] || '';
+    return n.charAt(0).toUpperCase() + n.slice(1);
+  }, []);
+
+  /* =============== cargar gastos =============== */
   const fetchGastos = useCallback(async () => {
     try {
       if (!refreshing) setLoading(true);
       const { data: sessionData } = await supabase.auth.getSession();
       const user = sessionData?.session?.user;
-      if (!user) { setItems([]); return; }
+      if (!user) { setItems([]); setTotalMonth(0); return; }
 
       let query = supabase
         .from('gastos')
@@ -86,26 +169,42 @@ export default function ExpensesListScreen() {
       if (error) {
         console.log('Error listando gastos:', error.message);
         setItems([]);
+        setTotalMonth(0);
       } else {
-        setItems((data || []).map((g) => ({
-          id: String(g.id),                         // <- forzamos string (uuid o int)
+        const mapped = (data || []).map((g) => ({
+          id: String(g.id),
           fecha: g.fecha,
-          id_tipo_gasto: g.id_tipo_gasto ? String(g.id_tipo_gasto) : null, // <- string
+          id_tipo_gasto: g.id_tipo_gasto ? String(g.id_tipo_gasto) : null,
           tipo: g.tipo ?? null,
           total: Number(g.total || 0),
           nota: g.nota ? String(g.nota).trim() : '',
-        })));
+        }));
+        setItems(mapped);
+
+        // === TOTAL DEL MES (LOCAL) ===
+        const { startYMD, endYMD } = monthRange;
+        let sumMes = 0;
+        for (const it of mapped) {
+          const ymd = normalizeToYMD(it.fecha);
+          if (ymd >= startYMD && ymd <= endYMD) {
+            if (!filterTipoGastoId || it.id_tipo_gasto === String(filterTipoGastoId)) {
+              sumMes += Number(it.total || 0);
+            }
+          }
+        }
+        setTotalMonth(sumMes);
       }
     } catch (e) {
       console.log('Excepción listando gastos:', e?.message);
       setItems([]);
+      setTotalMonth(0);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [refreshing, filterTipoGastoId]);
+  }, [refreshing, filterTipoGastoId, monthRange]);
 
-  // ---------- cargar tipos ----------
+  /* =============== cargar tipos (con íconos) =============== */
   const fetchTipos = useCallback(async () => {
     try {
       setTiposLoading(true);
@@ -115,7 +214,7 @@ export default function ExpensesListScreen() {
 
       const { data, error } = await supabase
         .from(TABLE_TIPOS)
-        .select('id, nombre')
+        .select('id, nombre, icon_name')
         .eq('user_id', user.id)
         .eq('activo', true)
         .order('nombre', { ascending: true });
@@ -124,10 +223,13 @@ export default function ExpensesListScreen() {
         console.log('Error cargando tipos:', error.message);
         setTipos([]);
       } else {
-        setTipos((data || []).map((t) => ({
-          id: String(t.id),                // <- string (si es uuid, queda ok)
+        const mapped = (data || []).map((t) => ({
+          id: String(t.id),
           nombre: String(t.nombre).trim(),
-        })));
+          icon_name: t.icon_name || null,
+          IconCmp: resolveIcon(t.icon_name, t.nombre),
+        }));
+        setTipos(mapped);
       }
     } catch (e) {
       console.log('Excepción cargando tipos:', e?.message);
@@ -141,7 +243,7 @@ export default function ExpensesListScreen() {
   useFocusEffect(useCallback(() => { fetchGastos(); fetchTipos(); }, [fetchGastos, fetchTipos, filterTipoGastoId]));
   const onRefresh = useCallback(() => { setRefreshing(true); Promise.all([fetchGastos(), fetchTipos()]); }, [fetchGastos, fetchTipos]);
 
-  // ---------- helpers UI ----------
+  /* =============== helpers UI (nombre + ícono) =============== */
   const getTipoNombre = useCallback((item) => {
     if (item.id_tipo_gasto) {
       const t = tipos.find((x) => x.id === item.id_tipo_gasto);
@@ -151,14 +253,24 @@ export default function ExpensesListScreen() {
     return 'Gasto';
   }, [tipos]);
 
-  // ---------- abrir modal ----------
+  const getTipoIcon = useCallback((item) => {
+    if (item.id_tipo_gasto) {
+      const t = tipos.find((x) => x.id === item.id_tipo_gasto);
+      if (t && t.IconCmp) return t.IconCmp;
+      if (t) return resolveIcon(t.icon_name, t.nombre);
+    }
+    if (item.tipo) return resolveIcon(null, item.tipo);
+    return Lucide.Tag;
+  }, [tipos]);
+
+  /* =============== abrir modal =============== */
   const openEdit = (item) => {
-    setEditId(String(item.id));                 // <- string
+    setEditId(String(item.id));
     setFechaUI(isoToUI(item.fecha));
     setTotal(item.total?.toString() || '');
     setNota(item.nota || '');
     if (item.id_tipo_gasto) {
-      setTipoId(String(item.id_tipo_gasto));    // <- string
+      setTipoId(String(item.id_tipo_gasto));
     } else if (item.tipo) {
       const byName = tipos.find((t) => t.nombre.toLowerCase() === String(item.tipo).toLowerCase());
       setTipoId(byName ? String(byName.id) : null);
@@ -168,7 +280,7 @@ export default function ExpensesListScreen() {
     setEditVisible(true);
   };
 
-  // ---------- eliminar ----------
+  /* =============== eliminar =============== */
   const removeItem = async (id) => {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -178,7 +290,7 @@ export default function ExpensesListScreen() {
       const { error } = await supabase
         .from('gastos')
         .delete()
-        .eq('id', String(id)) // <- string
+        .eq('id', String(id))
         .eq('user_id', user.id);
 
       if (error) {
@@ -186,6 +298,18 @@ export default function ExpensesListScreen() {
         Alert.alert('Eliminar', 'No se pudo eliminar.');
       } else {
         setItems((prev) => prev.filter((it) => it.id !== String(id)));
+        // Ajuste rápido del total mensual si corresponde
+        setTotalMonth((prev) => {
+          const removed = items.find((x) => x.id === String(id));
+          if (!removed) return prev;
+          const ymd = normalizeToYMD(removed.fecha);
+          if (ymd >= monthRange.startYMD && ymd <= monthRange.endYMD) {
+            if (!filterTipoGastoId || removed.id_tipo_gasto === String(filterTipoGastoId)) {
+              return prev - Number(removed.total || 0);
+            }
+          }
+          return prev;
+        });
       }
     } catch (e) {
       console.log('Excepción eliminando gasto:', e?.message);
@@ -200,7 +324,7 @@ export default function ExpensesListScreen() {
     ]);
   };
 
-  // ---------- validar & guardar ----------
+  /* =============== validar & guardar =============== */
   const validar = () => {
     if (!isValidUIDate(fechaUI)) return 'Formato de fecha inválido (DD/MM/YYYY).';
     if (!tipoId) return 'Debes seleccionar un tipo.';
@@ -222,22 +346,21 @@ export default function ExpensesListScreen() {
       const payload = {
         user_id: uid,
         fecha: uiToISO(fechaUI),
-        id_tipo_gasto: tipoId ? String(tipoId) : null,   // <- string o null (UUID compatible)
+        id_tipo_gasto: tipoId ? String(tipoId) : null,
         total: parseFloat(String(total).replace(',', '.')),
         nota: nota?.trim() || null,
-        tipo: null, // opcional: si migraste a FK, limpias el campo texto
+        tipo: null, // si migraste a FK
       };
 
       const { error } = await supabase
         .from('gastos')
         .update(payload)
-        .eq('id', String(editId))   // <- string
+        .eq('id', String(editId))
         .eq('user_id', uid);
 
       if (error) {
         Alert.alert('Error', error.message);
       } else {
-        // refresco local
         const nuevaFechaISO = uiToISO(fechaUI);
         const totalNum = parseFloat(String(total).replace(',', '.'));
         setItems((prev) =>
@@ -247,6 +370,28 @@ export default function ExpensesListScreen() {
               : it
           )
         );
+
+        // Recalcular total del mes localmente para el ítem editado
+        setTotalMonth((prev) => {
+          let newSum = prev;
+          const old = items.find((x) => x.id === String(editId));
+          const { startYMD, endYMD } = monthRange;
+
+          if (old) {
+            const oldYMD = normalizeToYMD(old.fecha);
+            const oldAplicaMes = oldYMD >= startYMD && oldYMD <= endYMD;
+            const oldAplicaTipo = !filterTipoGastoId || old.id_tipo_gasto === String(filterTipoGastoId);
+            if (oldAplicaMes && oldAplicaTipo) newSum -= Number(old.total || 0);
+          }
+
+          const newYMD = normalizeToYMD(nuevaFechaISO);
+          const newAplicaMes = newYMD >= startYMD && newYMD <= endYMD;
+          const newAplicaTipo = !filterTipoGastoId || String(tipoId) === String(filterTipoGastoId);
+          if (newAplicaMes && newAplicaTipo) newSum += Number(totalNum || 0);
+
+          return newSum;
+        });
+
         setEditVisible(false);
       }
     } catch (e) {
@@ -255,16 +400,19 @@ export default function ExpensesListScreen() {
       setSaving(false);
     }
   };
+  
 
-  // ---------- render fila ----------
+  /* =============== render fila =============== */
   const renderItem = ({ item }) => {
     const titulo = getTipoNombre(item);
     const sub = `${isoToUI(item.fecha)}${item.nota ? ' • ' + item.nota : ''}`;
+    const IconCmp = getTipoIcon(item);
 
     return (
       <TouchableOpacity activeOpacity={0.8} onPress={() => openEdit(item)} style={[styles.card, { backgroundColor: theme.colors.card }]}>
-        <View style={[styles.iconCircle, { backgroundColor: theme.isDark ? '#fff' : '#000' }]}>
-          <Ionicons name="receipt-outline" size={18} color={theme.isDark ? '#000' : '#fff'} />
+        <View style={[styles.iconCircle, { backgroundColor: theme.isDark ? 'rgba(255,255,255,0.9)' : '#000' }]}>
+          {/* Lucide usa stroke, por eso color = texto invertido */}
+          <IconCmp size={18} color={theme.isDark ? '#000' : '#fff'} strokeWidth={2.2} />
         </View>
         <View style={{ flex: 1, marginLeft: 10 }}>
           <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>{titulo}</Text>
@@ -280,7 +428,7 @@ export default function ExpensesListScreen() {
     );
   };
 
-  // ---------- UI ----------
+  /* =============== UI =============== */
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]}>
       {/* Header */}
@@ -288,6 +436,21 @@ export default function ExpensesListScreen() {
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
           {filterTipoGastoNombre ? `Gastos • ${filterTipoGastoNombre}` : 'Todos los gastos'}
         </Text>
+      </View>
+
+      {/* Tarjeta Total del mes */}
+      <View style={[styles.summaryCard, { backgroundColor: theme.colors.card }]}>
+        <View style={[styles.iconCircleBig, { backgroundColor: theme.isDark ? '#fff' : '#000' }]}>
+          <Ionicons name="wallet-outline" size={24} color={theme.isDark ? '#000' : '#fff'} />
+        </View>
+        <View style={{ marginLeft: 12, flex: 1 }}>
+          <Text style={[styles.bigTitle, { color: theme.colors.text }]} numberOfLines={1}>
+            {monthNameEs}
+            {filterTipoGastoNombre ? ` • ${filterTipoGastoNombre}` : ''}
+          </Text>
+          <Text style={[styles.bigNumber, { color: theme.colors.text }]}>{formatCLP(totalMonth)}</Text>
+          <Text style={[styles.bigHint, { color: theme.colors.text }]}>Total del mes</Text>
+        </View>
       </View>
 
       {/* Chip de filtro + botón limpiar */}
@@ -361,31 +524,42 @@ export default function ExpensesListScreen() {
                 </View>
               </View>
 
-              {/* TIPO (chips) */}
+              {/* TIPO (chips con icono) */}
               <View style={styles.fieldBlock}>
                 <Text style={[styles.label, { color: theme.colors.text }]}>Tipo</Text>
                 <View style={styles.pillRow}>
-                  {(tipos ?? []).map((t) => (
-                    <TouchableOpacity
-                      key={t.id}
-                      style={[
-                        styles.pill,
-                        { backgroundColor: theme.isDark ? '#1b1b1b' : '#f6f6f6' },
-                        tipoId === t.id && { backgroundColor: theme.isDark ? '#fff' : '#000' },
-                      ]}
-                      onPress={() => setTipoId(String(t.id))}
-                    >
-                      <Text
+                  {(tipos ?? []).map((t) => {
+                    const IconCmp = t.IconCmp || Lucide.Tag;
+                    const active = tipoId === t.id;
+                    return (
+                      <TouchableOpacity
+                        key={t.id}
                         style={[
-                          styles.pillText,
-                          { color: theme.colors.text },
-                          tipoId === t.id && { color: theme.isDark ? '#000' : '#fff', fontWeight: '800' },
+                          styles.pill,
+                          { backgroundColor: theme.isDark ? '#1b1b1b' : '#f6f6f6' },
+                          active && { backgroundColor: theme.isDark ? '#fff' : '#000' },
                         ]}
+                        onPress={() => setTipoId(String(t.id))}
                       >
-                        {t.nombre}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                        <IconCmp
+                          size={14}
+                          color={active ? (theme.isDark ? '#000' : '#fff') : theme.colors.text}
+                          strokeWidth={2.2}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text
+                          style={[
+                            styles.pillText,
+                            { color: theme.colors.text },
+                            active && { color: theme.isDark ? '#000' : '#fff', fontWeight: '800' },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {t.nombre}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                   {tiposLoading && <ActivityIndicator style={{ marginLeft: 6 }} />}
                   {!tiposLoading && (tipos ?? []).length === 0 && (
                     <Text style={{ color: theme.colors.text, opacity: 0.7 }}>
@@ -455,9 +629,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   headerTitle: { fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  btnPrimary: {
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 30,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  // Tarjeta resumen
+  summaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 14,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  iconCircleBig: {
+    width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center',
+  },
+  bigTitle: { fontSize: 14, opacity: 0.8 },
+  bigNumber: { fontSize: 26, fontWeight: '800', marginTop: 2 },
+  bigHint: { fontSize: 12, opacity: 0.6, marginTop: 2 },
 
   filterRow: {
-    paddingHorizontal: 16,marginTop: 15, marginBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, marginTop: 10, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8,
   },
   filterChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -556,7 +757,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  pill: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  pill: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center' },
   pillText: { fontSize: 13 },
 
   footer: {
@@ -564,12 +765,5 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderTopWidth: 0.3,
     borderTopColor: '#ccc',
-  },
-  btnPrimary: {
-    width: '100%',
-    paddingVertical: 14,
-    borderRadius: 26,
-    alignItems: 'center',
-    marginBottom: 8,
   },
 });
