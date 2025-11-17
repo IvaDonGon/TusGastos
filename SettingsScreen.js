@@ -117,6 +117,9 @@ export default function SettingsScreen({ navigation }) {
   const [notifyAtPercent, setNotifyAtPercent] = useState(80);
   const [userId, setUserId] = useState(null);
 
+    // 🆕 Preferencia: respaldar gasto con foto
+  const [receiptBackupEnabled, setReceiptBackupEnabled] = useState(false);
+
   // =========================
   // Cargar perfil + settings
   // =========================
@@ -135,7 +138,7 @@ export default function SettingsScreen({ navigation }) {
 
       const { data: perfilData, error: perfilErr } = await supabase
         .from('usuarios')
-        .select('nombre, email, limits_by_category_enabled, notify_at_percent')
+        .select('nombre, email, limits_by_category_enabled, notify_at_percent,receipt_backup_enabled')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -150,10 +153,18 @@ export default function SettingsScreen({ navigation }) {
         if (typeof perfilData.notify_at_percent === 'number') {
           setNotifyAtPercent(perfilData.notify_at_percent);
         }
+
+         // 🆕 cargar preferencia de respaldo de gastos
+        if (typeof perfilData.receipt_backup_enabled === 'boolean') {
+          setReceiptBackupEnabled(perfilData.receipt_backup_enabled);
+        } else {
+          setReceiptBackupEnabled(false);
+        }
       } else {
         setPerfil(null);
         setLimitsByCategoryEnabled(false);
         setNotifyAtPercent(80);
+        setReceiptBackupEnabled(false);
       }
     } catch (err) {
       console.log('cargarPerfilYSettings error:', err);
@@ -201,6 +212,43 @@ export default function SettingsScreen({ navigation }) {
     setLimitsByCategoryEnabled(next); // UI optimista
     saveLimitsByCategory(next);
   }, [limitsByCategoryEnabled, saveLimitsByCategory]);
+
+
+
+  // =========================
+  // 🆕 Guardar preferencia de respaldo con foto
+  // =========================
+  const saveReceiptBackup = useCallback(
+    async (nextEnabled) => {
+      if (!userId) return;
+
+      try {
+        setSaving(true);
+        const { error } = await supabase
+          .from('usuarios')
+          .update({
+            receipt_backup_enabled: nextEnabled,
+          })
+          .eq('id', userId);
+
+        if (error) throw error;
+      } catch (err) {
+        console.log('saveReceiptBackup error:', err);
+        Alert.alert('Error', 'No se pudo guardar la configuración de respaldo.');
+        setReceiptBackupEnabled((prev) => !prev); // revertir si falla
+      } finally {
+        setSaving(false);
+      }
+    },
+    [userId]
+  );
+
+  const onToggleReceiptBackup = useCallback(() => {
+    const next = !receiptBackupEnabled;
+    setReceiptBackupEnabled(next); // UI optimista
+    saveReceiptBackup(next);
+  }, [receiptBackupEnabled, saveReceiptBackup]);
+
 
   // =========================
   // Logout
@@ -349,6 +397,40 @@ export default function SettingsScreen({ navigation }) {
               value={theme.isDark}
               onValueChange={toggleTheme}
               trackColor={{ false: '#aaa', true: '#000' }}
+              thumbColor={Platform.OS === 'android' ? '#fff' : undefined}
+            />
+          </View>
+
+                  {/* 🆕 Respaldar gastos con foto */}
+          <View style={[styles.card, { backgroundColor: theme.colors.card }]}>
+            <View
+              style={[
+                styles.cardIconBox,
+                { backgroundColor: theme.isDark ? '#ffffff14' : '#00000010' },
+              ]}
+            >
+              <Ionicons
+                name="image-outline"
+                size={20}
+                color={theme.isDark ? '#fff' : '#000'}
+              />
+            </View>
+            <View style={styles.cardTextContainer}>
+              <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+                Respaldar gastos con foto
+              </Text>
+              <Text style={[styles.cardSubtitle, { color: theme.colors.text }]}>
+                Te pediremos la foto del comprobante al registrar un gasto.
+              </Text>
+            </View>
+            <Switch
+              value={receiptBackupEnabled}
+              onValueChange={onToggleReceiptBackup}
+              disabled={saving}
+              trackColor={{
+                false: '#aaa',
+                true: theme.isDark ? '#ffffff55' : '#00000066',
+              }}
               thumbColor={Platform.OS === 'android' ? '#fff' : undefined}
             />
           </View>
